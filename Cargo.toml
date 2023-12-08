@@ -1,0 +1,8 @@
+[package]
+name = "detectrms-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rust-htslib = "0.44.1"
+seq_io = "0.3.2"
