@@ -1,6 +1,6 @@
 use rust_htslib::bam::ext::BamRecordExtensions;
 use rust_htslib::bam::pileup::Indel;
-use rust_htslib::bam::{Reader as BamReader, Read};
+use rust_htslib::bam::Read;
 use seq_io::fasta::{Reader as FastaReader, Record};
 use std::fs::File;
 use std::io::{BufReader, Write, BufWriter};
@@ -8,6 +8,12 @@ use std::io::{self};
 use std::env;
 use std::process;
 use std::collections::HashMap;
+use rayon::prelude::*;
+use std::sync::{Arc, Mutex};
+use std::process::Command;
+use std::str;
+use rust_htslib::bam::IndexedReader;
+use rust_htslib::bam::FetchDefinition;
 
 fn fetch_reference_base(fasta_reader: &mut FastaReader<BufReader<File>>, ref_name: &str, pos: usize) -> io::Result<char> {
     for result in fasta_reader.records() {
@@ -30,8 +36,14 @@ fn fetch_reference_base(fasta_reader: &mut FastaReader<BufReader<File>>, ref_nam
 }  
 
 fn process_ref(bam_file: &str, fasta_file: &str, ref_name: &str) -> Vec<String> {
-    let mut bam_reader = BamReader::from_path(bam_file).expect("Error opening BAM file");
+    let mut bam_reader = IndexedReader::from_path(bam_file).expect("Error opening BAM file");
     let mut fasta_reader = FastaReader::new(BufReader::new(File::open(fasta_file).expect("Error opening FASTA file")));
+
+    let tid = bam_reader.header().tid(ref_name.as_bytes()).expect("Reference not found") as i32;
+    let start: i64 = 0;
+    let end: i64 = 1 << 29; // Large value to cover the range of a reference
+
+    bam_reader.fetch(FetchDefinition::Region(tid, start, end)).expect("Error setting region");
 
     let mut ref_reads = 0;
     let mut ref_cov_start = usize::MAX;
@@ -58,9 +70,10 @@ fn process_ref(bam_file: &str, fasta_file: &str, ref_name: &str) -> Vec<String> 
             }
         }
     }
-    
+    //println!("{}: {} reads, coverage {}-{}", ref_name, ref_reads, ref_cov_start, ref_cov_end);
+    //prints  8396 reads, coverage 0-18761 for every reference
     if ref_reads < 10 {
-        eprintln!("Skipping reference {} with only {} reads", ref_name, ref_reads);
+        println!("Skipping reference {} with only {} reads", ref_name, ref_reads);
         return Vec::new();
     }
 
@@ -70,14 +83,18 @@ fn process_ref(bam_file: &str, fasta_file: &str, ref_name: &str) -> Vec<String> 
         let mut qualities = Vec::new();
         let mut mismatches = 0;
         let mut insertions = 0;
-        let mut deletions = 0;
+        let mut deletions = 0;  
         let mut strand = '+';
         let mut coverage = 0;
+        println!("Processing position {}", pos + 1);  // Debug print, this is called
+
 
         // Fetch pileup for the current position
         for pileup in bam_reader.pileup() {
+                  
+            println!("Processing pileup at positionxs");//this is never called
             let pileup_column = pileup.expect("Error reading pileup column");
-    
+            println!("{:?}", pileup_column.pos());
             if pileup_column.pos() as usize != pos {
                 continue;
             }
@@ -126,7 +143,8 @@ fn process_ref(bam_file: &str, fasta_file: &str, ref_name: &str) -> Vec<String> 
 
         // Calculate coverage
         coverage = base_counts.values().sum::<i32>();
-
+        println!("{}:{}", pos + 1, coverage);  // Debug print
+    
         // Calculate mean quality
         let mean_quality = if !qualities.is_empty() {
             qualities.iter().sum::<u8>() as f64 / qualities.len() as f64
@@ -174,8 +192,6 @@ fn process_ref(bam_file: &str, fasta_file: &str, ref_name: &str) -> Vec<String> 
     output_lines
 }
 
-
-
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -188,32 +204,50 @@ fn main() {
     let fasta_file = &args[2];
     let output_file = &args[3];
 
-    let bam_reader = BamReader::from_path(bam_file).expect("Error opening BAM file");
+    // Run `samtools idxstats` and capture the output
+    let output = Command::new("samtools")
+        .arg("idxstats")
+        .arg(bam_file)
+        .output()
+        .expect("Failed to execute samtools");
 
-    println!("Creating output file at: {}", output_file);
+    // Convert the output to a string
+    let output_str = str::from_utf8(&output.stdout).expect("Failed to read stdout");
 
-    let mut output_file = BufWriter::new(File::create(output_file).expect("Error creating output file"));
+    // Parse the output to get references with reads
+    let references_with_reads: Vec<String> = output_str.lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() >= 3 && fields[2] != "0" {
+                Some(fields[0].to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    println!("Writing header to output file");
+    println!("Number of bam references with reads: {}", references_with_reads.len());
 
-    if let Err(e) = writeln!(output_file, "#Ref\tpos\tbase\tstrand\tcov\tmean_q\tmedian_q\tstd_q\tmis\tins\tdel\tACGT") {
-        eprintln!("Error writing header to output file: {}", e);
-        return;
+    // Create and set up the output file with Arc and Mutex for thread safety
+    let output_file = File::create(output_file).expect("Error creating output file");
+    let output_file = Arc::new(Mutex::new(BufWriter::new(output_file)));
+
+    // Write header to output file
+    {
+        let mut output = output_file.lock().unwrap();
+        writeln!(output, "#Ref\tpos\tbase\tstrand\tcov\tmean_q\tmedian_q\tstd_q\tmis\tins\tdel\tACGT").expect("Error writing header to output file");
     }
 
-    output_file.flush().expect("Error flushing output file");
-
-    // Process each reference
-    for ref_name_bytes in bam_reader.header().target_names() {
-        let ref_name_str = std::str::from_utf8(ref_name_bytes).expect("Found invalid UTF-8");
+    // Parallel processing of filtered references
+    references_with_reads.par_iter().for_each(|ref_name_str| {
         println!("Processing reference {}...", ref_name_str);
         let results = process_ref(bam_file, fasta_file, ref_name_str);
 
-        // Write results to the file
+        // Concurrently write results to the file
+        let mut output = output_file.lock().unwrap();
         for line in results {
-            writeln!(output_file, "{}", line).expect("Error writing to output file");
+            println!("Writing line: {}", line);  // Debug print
+            writeln!(output, "{}", line).expect("Error writing to output file");
         }
-        output_file.flush().expect("Error flushing output file");
-
-    }
+    });
 }
