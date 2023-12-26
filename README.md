@@ -1,7 +1,7 @@
 
 # Detect RMS (RNA Modification Sites)
 
-This tool processes BAM alignment files from Naopore long read sequencing and using the references fasta file, computes the mismatch frequency of all bases among other stats.
+This tool processes BAM alignment files from Nanopore long read sequencing and using the references fasta file, computes the mismatch frequency of all bases among other stats.
 
 ## Features
 - Reading and processing BAM files using `rust_htslib`.
@@ -25,9 +25,9 @@ cargo install --path .
 ## Usage
 After building the project, you can run the tool using the following command:
 
-\```bash
+```
 cargo run -- --bam <path-to-bam-file> --fasta <path-to-fasta-file> --output <path-to-output-tsv>
-\```
+```
 
 ### Command Line Arguments
 - `--bam`: Path to the input BAM file.
