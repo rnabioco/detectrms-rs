@@ -12,7 +12,7 @@ This tool processes BAM alignment files from Nanopore long read sequencing and u
 
 ## Installation
 
-To install `deepsort`, you need to have Rust and Cargo installed on your system. If you don't have Rust installed, follow the instructions on [Rust's official website](https://www.rust-lang.org/tools/install).
+To install `detectrms`, you need to have Rust and Cargo installed on your system. If you don't have Rust installed, follow the instructions on [Rust's official website](https://www.rust-lang.org/tools/install).
 
 ```bash
 git clone https://github.com/rnabioco/detectrms-rs
@@ -26,7 +26,7 @@ cargo install --path .
 After building the project, you can run the tool using the following command:
 
 ```
-cargo run -- --bam <path-to-bam-file> --fasta <path-to-fasta-file> --output <path-to-output-tsv>
+detectrms --bam <path-to-bam-file> --fasta <path-to-fasta-file> --output <path-to-output-tsv>
 ```
 
 ### Command Line Arguments
