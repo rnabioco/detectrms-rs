@@ -22,6 +22,15 @@ cd detectrms-rs
 cargo install --path .
 ```
 
+### Known Installation Issue on Bodhi HPC
+The Bodhi HPC has an old version OpenSSL that prevents compilation.
+
+Use the Bodhi build environment docker container example to build from scratch:
+<https://github.com/rnabioco/bodhi-docker-env>
+
+or a precompiled version exists at:
+`/beevol/home/kaufmanm/bin/detectrms`
+
 ## Usage
 After building the project, you can run the tool using the following command:
 
