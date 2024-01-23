@@ -1,5 +1,5 @@
 use clap::Parser;
-use rust_htslib::bam::{Read, IndexedReader};
+use rust_htslib::bam::{Read, IndexedReader, pileup::Indel};
 use std::collections::{HashMap, BTreeMap};
 use std::path::Path;
 use bio::io::fasta;
@@ -97,21 +97,21 @@ fn main() {
                 let mut deletions = 0;
                 let mut strand: char = ' ';
                 let reference_base = *sequence.get(pos).unwrap_or(&b'N') as char;
-
                 for pileup_read in p.alignments() {
                     if pileup_read.record().is_reverse() {
                         strand = '-';
                     } else {
                         strand = '+';
                     }
-                    let is_del = pileup_read.is_del();
-                    let is_refskip = pileup_read.is_refskip();
 
-                    if is_del || is_refskip {
-                        if is_del {
+                    match pileup_read.indel() {
+                        Indel::Ins(_) => {
+                            insertions += 1;
+                        },
+                        Indel::Del(_) => {
                             deletions += 1;
-                        }
-                        continue;
+                        },
+                        _ => {},
                     }
 
                     if let Some(qpos) = pileup_read.qpos() {
