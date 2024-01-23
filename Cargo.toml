@@ -1,5 +1,5 @@
 [package]
-name = "detectrms-rs"
+name = "detectrms"
 version = "0.1.1"
 edition = "2021"
 
